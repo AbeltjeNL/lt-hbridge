@@ -12,5 +12,5 @@ This component is optimized for ESPHome version 2026.11.x because the old compon
 The output stage is basically just two half-bridges so the lights' polarity can be changed (to turn on the two colors).
 However, it is designed in a weird way, which causes the transistors to short out the power supply when both outputs are active at the same time.
 
-### Great thanx to
+### Great thanks to
 [@LeoDJ](https://github.com/LeoDJ) and [@patagonaa](https://github.com/patagonaa) thanks for your great work in the past. I'm still using this component as of today for my Christmas lights. I hope you don't mind me for forking and bringing the component up to date. If you do mind please open an issue in this repo to inform me.
