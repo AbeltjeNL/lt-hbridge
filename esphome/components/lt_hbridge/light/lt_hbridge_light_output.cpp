@@ -49,16 +49,20 @@ light::LightTraits LTHBridgeLightOutput::get_traits() {
 }
 
 void LTHBridgeLightOutput::setup() {
-  if (!pin_to_pwm(this->pin_a_, &this->chan_a_) || !pin_to_pwm(this->pin_b_, &this->chan_b_)) {
-    ESP_LOGE(TAG, "pin_a/pin_b are not PWM pins");
+  uint8_t chan_a, chan_b;
+  if (!pin_to_pwm(this->pin_a_, &chan_a) || !pin_to_pwm(this->pin_b_, &chan_b) || chan_a == chan_b) {
+    ESP_LOGE(TAG, "pin_a/pin_b must be two different PWM pins");
     this->mark_failed();
     return;
   }
-  if (pwm_cw_group_check(this->chan_a_, this->chan_b_) < PWM_GROUP_NUM) {
-    ESP_LOGE(TAG, "pin_a and pin_b must be in different PWM groups");
-    this->mark_failed();
-    return;
-  }
+
+  // Same PWM group: hardware group mode, where the even channel of the group is always the one that
+  // is high at the start of the period. Different groups: two synchronised channels, pin_b first.
+  this->group_ = pwm_cw_group_check(chan_a, chan_b);
+  this->group_mode_ = this->group_ < PWM_GROUP_NUM;
+  this->first_is_a_ = this->group_mode_ && (chan_a % 2 == 0);
+  this->first_chan_ = this->first_is_a_ ? chan_a : chan_b;
+  this->second_chan_ = this->first_is_a_ ? chan_b : chan_a;
 
   this->period_ = static_cast<uint32_t>(PWM_CLOCK_HZ / this->frequency_);
   this->dead_band_ = static_cast<uint32_t>(static_cast<uint64_t>(PWM_CLOCK_HZ) * this->dead_time_us_ / 1000000ULL);
@@ -69,9 +73,12 @@ void LTHBridgeLightOutput::setup() {
     this->mark_failed();
     return;
   }
-  // Starts both channels with interrupts disabled, so they run in sync.
-  if (pwm_cw_start(this->chan_b_, this->chan_a_) != 0) {
-    ESP_LOGE(TAG, "Starting the PWM channels failed");
+  // Starts both channels at once, so they run in sync.
+  __wrap_bk_printf_disable();
+  UINT8 ret = this->group_mode_ ? pwm_cw_group_start(this->group_) : pwm_cw_start(this->first_chan_, this->second_chan_);
+  __wrap_bk_printf_enable();
+  if (ret != 0) {
+    ESP_LOGE(TAG, "Starting the PWM channels failed (%u)", ret);
     this->mark_failed();
     return;
   }
@@ -83,11 +90,13 @@ void LTHBridgeLightOutput::dump_config() {
                 "  Frequency: %.0f Hz\n"
                 "  Dead time: %" PRIu32 " us\n"
                 "  Constant brightness: %s\n"
-                "  PWM channels: A=%u, B=%u",
-                this->frequency_, this->dead_time_us_, YESNO(this->constant_brightness_), this->chan_a_,
-                this->chan_b_);
-  LOG_PIN("  Pin A: ", this->pin_a_);
-  LOG_PIN("  Pin B: ", this->pin_b_);
+                "  PWM mode: %s\n"
+                "  PWM channels: first=%u (pin_%c), second=%u (pin_%c)",
+                this->frequency_, this->dead_time_us_, YESNO(this->constant_brightness_),
+                this->group_mode_ ? "group (same PWM group)" : "synchronised (different PWM groups)",
+                this->first_chan_, this->first_is_a_ ? 'a' : 'b', this->second_chan_, this->first_is_a_ ? 'b' : 'a');
+  LOG_PIN("  Pin A (warm white): ", this->pin_a_);
+  LOG_PIN("  Pin B (cold white): ", this->pin_b_);
 }
 
 void LTHBridgeLightOutput::write_state(light::LightState *state) {
@@ -97,8 +106,8 @@ void LTHBridgeLightOutput::write_state(light::LightState *state) {
   float cw = 0.0f, ww = 0.0f;
   state->current_values_as_cwww(&cw, &ww, this->constant_brightness_);
 
-  // Both strings share one period: cold white at the start, warm white at the end and a
-  // dead band after each pulse. Scale both down if together they don't fit.
+  // Both strings share one period: one pulse at the start, the other at the end and a dead band
+  // after each pulse. Scale both down if together they don't fit.
   const uint32_t usable = this->period_ - 2 * this->dead_band_;
   const float sum = cw + ww;
   const float scale = sum > 1.0f ? 1.0f / sum : 1.0f;
@@ -108,30 +117,33 @@ void LTHBridgeLightOutput::write_state(light::LightState *state) {
   if (cw_cycles + ww_cycles > usable)  // guard against float rounding
     ww_cycles = usable - cw_cycles;
 
-  if (cw_cycles == this->last_cw_ && ww_cycles == this->last_ww_)
+  // pin_a carries warm white, pin_b cold white
+  const uint32_t first = this->first_is_a_ ? ww_cycles : cw_cycles;
+  const uint32_t second = this->first_is_a_ ? cw_cycles : ww_cycles;
+
+  if (first == this->last_first_ && second == this->last_second_)
     return;
 
-  if (!this->apply_(cw_cycles, ww_cycles, false))
+  if (!this->apply_(first, second, false))
     ESP_LOGW(TAG, "Updating the PWM duty cycle failed");
 }
 
-bool LTHBridgeLightOutput::apply_(uint32_t cw_cycles, uint32_t ww_cycles, bool init) {
+bool LTHBridgeLightOutput::apply_(uint32_t first_cycles, uint32_t second_cycles, bool init) {
   pwm_cw_group_param_t param{};
-  // p0 = pin_b (high first), p1 = pin_a; channels in different groups so no shared group index
-  param.group = GET_GROUP_IDXS_BY_PORT(this->chan_b_, this->chan_a_);
+  param.group = this->group_mode_ ? this->group_ : GET_GROUP_IDXS_BY_PORT(this->first_chan_, this->second_chan_);
   param.p_t4 = this->period_;
 
-  // pin_b: high from 0 to cw_cycles
-  param.p0_t1 = cw_cycles;
-  param.p0_init_level = cw_cycles != 0 ? 1 : 0;
+  // first channel (p0): high from 0 to first_cycles
+  param.p0_t1 = first_cycles;
+  param.p0_init_level = first_cycles != 0 ? 1 : 0;
 
-  // pin_a: high from (period - dead band - ww_cycles) to (period - dead band)
-  if (ww_cycles == 0) {
+  // second channel (p1): high from (period - dead band - second_cycles) to (period - dead band)
+  if (second_cycles == 0) {
     param.p1_t1 = 0;
     param.p1_t2 = 0;
     param.p1_init_level = 0;
   } else {
-    param.p1_t1 = this->period_ - this->dead_band_ - ww_cycles;
+    param.p1_t1 = this->period_ - this->dead_band_ - second_cycles;
     param.p1_t2 = this->period_ - this->dead_band_;
     param.p1_init_level = 0;
   }
@@ -139,19 +151,19 @@ bool LTHBridgeLightOutput::apply_(uint32_t cw_cycles, uint32_t ww_cycles, bool i
   UINT8 ret;
   __wrap_bk_printf_disable();
   if (init) {
-    ret = pwm_cw_init_param(&param);
+    ret = this->group_mode_ ? pwm_cw_group_init_param(&param) : pwm_cw_init_param(&param);
   } else {
     // Takes effect at the end of the running period (in the PWM ISR), so no glitches.
-    ret = pwm_cw_update_param(&param);
+    ret = this->group_mode_ ? pwm_cw_group_update_param(&param) : pwm_cw_update_param(&param);
   }
   __wrap_bk_printf_enable();
 
   if (ret != 0) {
-    ESP_LOGV(TAG, "pwm_cw_%s_param returned %u", init ? "init" : "update", ret);
+    ESP_LOGV(TAG, "PWM %s returned %u", init ? "init" : "update", ret);
     return false;
   }
-  this->last_cw_ = cw_cycles;
-  this->last_ww_ = ww_cycles;
+  this->last_first_ = first_cycles;
+  this->last_second_ = second_cycles;
   return true;
 }
 

@@ -25,7 +25,8 @@ LTHBridgeLightOutput = lt_hbridge_ns.class_(
 )
 
 # BK7231N: GPIO -> PWM channel (same table as LibreTiny's wiring_analog.c).
-# Two channels form one PWM group: channel // 2 == group.
+# Two channels form one PWM group (channel // 2). Both pins may be in the same group
+# (CW group mode) or in different groups (synchronised CW mode).
 PWM_CHANNELS = {6: 0, 7: 1, 8: 2, 9: 3, 24: 4, 26: 5}
 
 
@@ -46,12 +47,8 @@ def _validate_hbridge(config):
             )
         channels.append(PWM_CHANNELS[number])
 
-    if channels[0] // 2 == channels[1] // 2:
-        raise cv.Invalid(
-            "pin_a and pin_b must be in different PWM groups "
-            "(G0: P6/P7, G1: P8/P9, G2: P24/P26)",
-            path=[CONF_PIN_B],
-        )
+    if channels[0] == channels[1]:
+        raise cv.Invalid("pin_a and pin_b must be two different pins", path=[CONF_PIN_B])
 
     period_us = 1e6 / config[CONF_FREQUENCY]
     dead_time_us = config[CONF_DEAD_TIME].total_microseconds

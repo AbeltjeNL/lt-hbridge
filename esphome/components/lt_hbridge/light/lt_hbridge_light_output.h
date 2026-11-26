@@ -12,11 +12,13 @@ namespace esphome::lt_hbridge {
 
 /// Drives two anti-parallel LED strings through an H-bridge on a BK7231N.
 ///
-/// Uses the "CW" mode of the Beken PWM driver (BDK >= 3.0.70): two PWM channels in
-/// different PWM groups run from one hardware-synchronised counter. pin_b is high at the
-/// start of each period (cold white), pin_a at the end (warm white), with a dead band
-/// around both pulses so the two outputs are never high at the same time (that would
-/// short the supply on this board).
+/// Uses the "CW" modes of the Beken PWM driver (BDK >= 3.0.70), so both outputs run from
+/// one hardware-synchronised counter:
+///  - pins in different PWM groups: CW mode, pin_b pulses at the start of each period;
+///  - pins in the same PWM group: CW group mode, the even PWM channel pulses first.
+/// pin_a carries warm white, pin_b cold white. A dead band after both pulses makes sure
+/// the two outputs are never high at the same time (that would short the supply on the
+/// fairy light board).
 class LTHBridgeLightOutput : public Component, public light::LightOutput {
  public:
   LTHBridgeLightOutput(InternalGPIOPin *pin_a, InternalGPIOPin *pin_b) : pin_a_(pin_a), pin_b_(pin_b) {}
@@ -33,7 +35,7 @@ class LTHBridgeLightOutput : public Component, public light::LightOutput {
 
  protected:
   /// Push new pulse lengths (in 26 MHz clock cycles) to the PWM hardware.
-  bool apply_(uint32_t cw_cycles, uint32_t ww_cycles, bool init);
+  bool apply_(uint32_t first_cycles, uint32_t second_cycles, bool init);
 
   InternalGPIOPin *pin_a_;
   InternalGPIOPin *pin_b_;
@@ -41,12 +43,15 @@ class LTHBridgeLightOutput : public Component, public light::LightOutput {
   uint32_t dead_time_us_{10};
   bool constant_brightness_{false};
 
-  uint8_t chan_a_{0};
-  uint8_t chan_b_{0};
+  uint8_t first_chan_{0};   // PWM channel that is high at the start of the period
+  uint8_t second_chan_{0};  // PWM channel that is high at the end of the period
+  uint8_t group_{0};        // PWM group, only valid in group mode
+  bool group_mode_{false};  // both pins in the same PWM group
+  bool first_is_a_{false};  // first_chan_ belongs to pin_a
   uint32_t period_{0};     // PWM period in 26 MHz cycles
   uint32_t dead_band_{0};  // dead band in 26 MHz cycles
-  uint32_t last_cw_{UINT32_MAX};
-  uint32_t last_ww_{UINT32_MAX};
+  uint32_t last_first_{UINT32_MAX};
+  uint32_t last_second_{UINT32_MAX};
 };
 
 }  // namespace esphome::lt_hbridge
