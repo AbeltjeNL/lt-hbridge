@@ -23,7 +23,7 @@ Use cases are christmas tree light, fairybell lights and icicle lights outside o
 
 ### Use case projects
 
-https://github.com/AbeltjeNL/123-LED-Kerstverlichting-Wi-Fi-Tuya-BK7231T-WB2S
-https://github.com/AbeltjeNL/123-LED-Kerstverlichting-Wi-Fi-Tuya-BK7231N-CB2S
+(https://github.com/AbeltjeNL/123-LED-Kerstverlichting-Wi-Fi-Tuya-BK7231T-WB2S)
+(https://github.com/AbeltjeNL/123-LED-Kerstverlichting-Wi-Fi-Tuya-BK7231N-CB2S)
 
 
