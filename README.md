@@ -16,9 +16,14 @@ However, it is designed in a weird way, which causes the transistors to short ou
 
 [@LeoDJ](https://github.com/LeoDJ) and [@patagonaa](https://github.com/patagonaa) thanks for your great work in the past. I'm still using this component as of today for my Christmas lights. I hope you don't mind me forking and bringing the component up to date. If you do mind please open an issue in this repo to inform me.
 
-### My projects that are using this component
+### My use cases for this component
 
 Mainly I am using this component for my christmas lights in combination with the 123-LED smart Tuya plugs. Full write-ups below. 
 Use cases are christmas tree light, fairybell lights and icicle lights outside on the rain gutter. 
 
-Projects:
+### Use case projects
+
+https://github.com/AbeltjeNL/123-LED-Kerstverlichting-Wi-Fi-Tuya-BK7231T-WB2S
+https://github.com/AbeltjeNL/123-LED-Kerstverlichting-Wi-Fi-Tuya-BK7231N-CB2S
+
+
