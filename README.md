@@ -19,7 +19,7 @@ However, it is designed in a weird way, which causes the transistors to short ou
 ### My use cases for this component
 
 Mainly I am using this component for my christmas lights in combination with the 123-LED smart Tuya plugs. Full write-ups below. 
-Use cases are christmas tree light, fairybell lights and icicle lights outside on the rain gutter. 
+Use cases are christmas tree lights, fairybell lights and icicle lights outside on the rain gutter. 
 
 ### Use case projects
 
