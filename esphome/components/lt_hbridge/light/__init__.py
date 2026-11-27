@@ -15,7 +15,7 @@ from esphome.const import (
 
 from .. import lt_hbridge_ns
 
-CODEOWNERS = ["@LeoDJ"]
+CODEOWNERS = ["@AbeltjeNL"]
 DEPENDENCIES = ["libretiny"]
 
 CONF_DEAD_TIME = "dead_time"
